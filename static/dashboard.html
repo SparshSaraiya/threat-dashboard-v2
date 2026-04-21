@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>ThreatWatch — SOC Dashboard</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+        <style>
+            :root {
+                --bg:         #060a0f;
+                --surface:    #0b1017;
+                --panel:      #0f1923;
+                --border:     #1a2a3a;
+                --accent:     #00d4ff;
+                --accent-dim: #00d4ff22;
+                --red:        #ff3c5a;
+                --orange:     #ff7c2a;
+                --yellow:     #f5c518;
+                --green:      #00e676;
+                --muted:      #3a5068;
+                --text:       #c8dce8;
+                --text-dim:   #5a7a90;
+                --mono:       'Share Tech Mono', monospace;
+                --sans:       'Exo 2', sans-serif;
+            }
+
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+
+            body {
+                background: var(--bg);
+                color: var(--text);
+                font-family: var(--sans);
+                min-height: 100vh;
+                overflow-x: hidden;
+            }
+
+            /* Scanline overlay for CRT effect */
+            body::before {
+                content: '';
+                position: fixed;
+                inset: 0;
+                background: repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(0,0,0,0.04) 2px,
+                    rgba(0,0,0,0.04) 4px
+                );
+                pointer-events: none;
+                z-index: 9999;
+            }
+
+            /* ── HEADER ── */
+            header {
+                background: var(--surface);
+                border-bottom: 1px solid var(--border);
+                padding: 0 2rem;
+                height: 56px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                position: sticky;
+                top: 0;
+                z-index: 100;
+            }
+
+            .logo {
+                font-family: var(--mono);
+                font-size: 1.1rem;
+                color: var(--accent);
+                letter-spacing: 0.15em;
+                display: flex;
+                align-items: center;
+                gap: 0.6rem;
+            }
+
+            .logo-dot {
+                width: 8px; height: 8px;
+                background: var(--accent);
+                border-radius: 50%;
+                box-shadow: 0 0 8px var(--accent);
+                animation: pulse 2s ease-in-out infinite;
+            }
+
+            @keyframes pulse {
+                0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+                50% { opacity: 0.4; box-shadow: 0 0 2px var(--accent); }
+            }
+
+            .header-right {
+                display: flex;
+                align-items: center;
+                gap: 1.5rem;
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                color: var(--text-dim);
+            }
+
+            #live-clock { color: var(--accent); }
+
+            .status-badge {
+                background: var(--accent-dim);
+                border: 1px solid var(--accent);
+                color: var(--accent);
+                padding: 3px 10px;
+                font-size: 0.7rem;
+                letter-spacing: 0.1em;
+                border-radius: 2px;
+            }
+
+            /* ── LAYOUT ── */
+            main {
+                max-width: 1400px;
+                margin: 0 auto;
+                padding: 1.5rem 2rem;
+                display: flex;
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+
+            /* ── METRIC CARDS ── */
+            .metrics-row {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                gap: 1rem;
+            }
+
+            .metric-card {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                border-top: 2px solid var(--accent);
+                padding: 1.2rem 1.4rem;
+                position: relative;
+                overflow: hidden;
+                transition: border-color 0.2s;
+            }
+
+            .metric-card.red   { border-top-color: var(--red); }
+            .metric-card.orange{ border-top-color: var(--orange); }
+            .metric-card.yellow{ border-top-color: var(--yellow); }
+            .metric-card.green { border-top-color: var(--green); }
+
+            .metric-card::after {
+                content: '';
+                position: absolute;
+                bottom: 0; left: 0; right: 0;
+                height: 40px;
+                background: linear-gradient(transparent, rgba(0,212,255,0.03));
+            }
+
+            .metric-label {
+                font-family: var(--mono);
+                font-size: 0.65rem;
+                letter-spacing: 0.12em;
+                color: var(--text-dim);
+                text-transform: uppercase;
+                margin-bottom: 0.5rem;
+            }
+
+            .metric-value {
+                font-family: var(--mono);
+                font-size: 2rem;
+                font-weight: bold;
+                color: var(--text);
+                line-height: 1;
+            }
+
+            .metric-card.red    .metric-value { color: var(--red); }
+            .metric-card.orange .metric-value { color: var(--orange); }
+            .metric-card.yellow .metric-value { color: var(--yellow); }
+            .metric-card.green  .metric-value { color: var(--green); }
+
+            .metric-sub {
+                font-size: 0.7rem;
+                color: var(--text-dim);
+                margin-top: 0.3rem;
+            }
+
+            /* ── FILTER BAR ── */
+            .filter-bar {
+                display: flex;
+                gap: 0.75rem;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+
+            .filter-label {
+                font-family: var(--mono);
+                font-size: 0.7rem;
+                color: var(--text-dim);
+                letter-spacing: 0.1em;
+            }
+
+            .filter-btn {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                font-family: var(--mono);
+                font-size: 0.7rem;
+                letter-spacing: 0.08em;
+                padding: 5px 14px;
+                cursor: pointer;
+                transition: all 0.15s;
+                border-radius: 2px;
+            }
+
+            .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+            .filter-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+            /* ── THREAT TABLE ── */
+            .table-panel {
+                background: var(--panel);
+                border: 1px solid var(--border);
+                overflow: hidden;
+            }
+
+            .panel-header {
+                padding: 0.9rem 1.4rem;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .panel-title {
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                letter-spacing: 0.15em;
+                color: var(--accent);
+                text-transform: uppercase;
+            }
+
+            .threat-count {
+                font-family: var(--mono);
+                font-size: 0.7rem;
+                color: var(--text-dim);
+            }
+
+            .table-wrap { overflow-x: auto; }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.82rem;
+            }
+
+            thead th {
+                padding: 0.7rem 1rem;
+                text-align: left;
+                font-family: var(--mono);
+                font-size: 0.65rem;
+                letter-spacing: 0.1em;
+                color: var(--text-dim);
+                text-transform: uppercase;
+                border-bottom: 1px solid var(--border);
+                white-space: nowrap;
+            }
+
+            tbody tr {
+                border-bottom: 1px solid rgba(26,42,58,0.5);
+                cursor: pointer;
+                transition: background 0.1s;
+            }
+
+            tbody tr:hover { background: rgba(0,212,255,0.04); }
+
+            tbody td {
+                padding: 0.75rem 1rem;
+                vertical-align: middle;
+                white-space: nowrap;
+            }
+
+            .sev-badge {
+                font-family: var(--mono);
+                font-size: 0.65rem;
+                font-weight: bold;
+                letter-spacing: 0.08em;
+                padding: 2px 8px;
+                border-radius: 2px;
+                border: 1px solid;
+            }
+
+            .sev-CRITICAL { color: var(--red);    border-color: var(--red);    background: rgba(255,60,90,0.1); }
+            .sev-HIGH     { color: var(--orange); border-color: var(--orange); background: rgba(255,124,42,0.1); }
+            .sev-MEDIUM   { color: var(--yellow); border-color: var(--yellow); background: rgba(245,197,24,0.1); }
+            .sev-LOW      { color: var(--green);  border-color: var(--green);  background: rgba(0,230,118,0.1); }
+            .sev-INFO     { color: var(--muted);  border-color: var(--muted);  background: rgba(58,80,104,0.1); }
+
+            .status-text {
+                font-family: var(--mono);
+                font-size: 0.68rem;
+            }
+            .status-ACTIVE        { color: var(--red); }
+            .status-INVESTIGATING { color: var(--yellow); }
+            .status-RESOLVED      { color: var(--green); }
+            .status-FALSE_POSITIVE{ color: var(--muted); }
+
+            .ip-text {
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                color: var(--text-dim);
+            }
+
+            .system-text {
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                color: var(--accent);
+                opacity: 0.7;
+            }
+
+            .ts-text {
+                font-family: var(--mono);
+                font-size: 0.7rem;
+                color: var(--text-dim);
+            }
+
+            .type-text { font-weight: 600; color: var(--text); }
+            .cat-text  { font-size: 0.7rem; color: var(--text-dim); }
+
+            /* ── DETAIL PANEL (side drawer) ── */
+            .drawer-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(6,10,15,0.7);
+                z-index: 200;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity 0.2s;
+            }
+            .drawer-overlay.open { opacity: 1; pointer-events: all; }
+
+            .drawer {
+                position: fixed;
+                top: 0; right: 0;
+                width: 420px;
+                max-width: 100vw;
+                height: 100vh;
+                background: var(--surface);
+                border-left: 1px solid var(--border);
+                z-index: 201;
+                transform: translateX(100%);
+                transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+            }
+            .drawer.open { transform: translateX(0); }
+
+            .drawer-header {
+                padding: 1.2rem 1.4rem;
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                position: sticky;
+                top: 0;
+                background: var(--surface);
+            }
+
+            .drawer-title {
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                letter-spacing: 0.12em;
+                color: var(--accent);
+            }
+
+            .drawer-close {
+                background: none;
+                border: 1px solid var(--border);
+                color: var(--text-dim);
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                padding: 4px 10px;
+                cursor: pointer;
+                transition: all 0.15s;
+            }
+            .drawer-close:hover { border-color: var(--red); color: var(--red); }
+
+            .drawer-body { padding: 1.4rem; display: flex; flex-direction: column; gap: 1.2rem; }
+
+            .detail-row {
+                display: flex;
+                flex-direction: column;
+                gap: 0.3rem;
+            }
+
+            .detail-key {
+                font-family: var(--mono);
+                font-size: 0.62rem;
+                letter-spacing: 0.1em;
+                color: var(--text-dim);
+                text-transform: uppercase;
+            }
+
+            .detail-val {
+                font-family: var(--mono);
+                font-size: 0.85rem;
+                color: var(--text);
+            }
+
+            .detail-desc {
+                font-family: var(--sans);
+                font-size: 0.85rem;
+                color: var(--text);
+                line-height: 1.6;
+            }
+
+            .mitre-badge {
+                display: inline-block;
+                background: rgba(0,212,255,0.08);
+                border: 1px solid var(--accent);
+                color: var(--accent);
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                padding: 4px 10px;
+            }
+
+            /* ── LOADING / ERROR STATES ── */
+            .loading-state {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 200px;
+                font-family: var(--mono);
+                font-size: 0.8rem;
+                color: var(--text-dim);
+                letter-spacing: 0.1em;
+            }
+
+            /* flicker animation for initial load */
+            @keyframes flicker {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.3; }
+            }
+            .loading-state span { animation: flicker 1s ease-in-out infinite; }
+        </style>
+    </head>
+    <body>
+
+        <header>
+            <div class="logo">
+                <div class="logo-dot"></div>
+                THREATWATCH // SOC DASHBOARD
+            </div>
+            <div class="header-right">
+                <span>ANALYST: SEC_OPS</span>
+                <span id="live-clock">--:--:--</span>
+                <span class="status-badge">● LIVE</span>
+            </div>
+        </header>
+
+        <main>
+
+            <!-- Metric Cards -->
+            <div class="metrics-row" id="metrics-row">
+                <div class="metric-card red">
+                    <div class="metric-label">Critical</div>
+                    <div class="metric-value" id="m-critical">—</div>
+                    <div class="metric-sub">threats detected</div>
+                </div>
+                <div class="metric-card orange">
+                    <div class="metric-label">High</div>
+                    <div class="metric-value" id="m-high">—</div>
+                    <div class="metric-sub">threats detected</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Active</div>
+                    <div class="metric-value" id="m-active">—</div>
+                    <div class="metric-sub">unresolved events</div>
+                </div>
+                <div class="metric-card green">
+                    <div class="metric-label">Resolved</div>
+                    <div class="metric-value" id="m-resolved">—</div>
+                    <div class="metric-sub">closed events</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Total Events</div>
+                    <div class="metric-value" id="m-total">—</div>
+                    <div class="metric-sub">last 72 hours</div>
+                </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div class="filter-bar">
+                <span class="filter-label">FILTER:</span>
+                <button class="filter-btn active" data-filter="ALL">ALL</button>
+                <button class="filter-btn" data-filter="CRITICAL">CRITICAL</button>
+                <button class="filter-btn" data-filter="HIGH">HIGH</button>
+                <button class="filter-btn" data-filter="MEDIUM">MEDIUM</button>
+                <button class="filter-btn" data-filter="LOW">LOW</button>
+                <button class="filter-btn" data-filter="ACTIVE" data-type="status">ACTIVE ONLY</button>
+            </div>
+
+            <!-- Threat Table -->
+            <div class="table-panel">
+                <div class="panel-header">
+                    <span class="panel-title">// THREAT FEED</span>
+                    <span class="threat-count" id="table-count">Loading...</span>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#ID</th>
+                                <th>Severity</th>
+                                <th>Type / Category</th>
+                                <th>Source IP</th>
+                                <th>Target System</th>
+                                <th>Status</th>
+                                <th>Timestamp (UTC)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="threat-tbody">
+                            <tr>
+                                <td colspan="7">
+                                    <div class="loading-state"><span>FETCHING THREAT DATA...</span></div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Detail Drawer -->
+        <div class="drawer-overlay" id="drawer-overlay"></div>
+        <div class="drawer" id="drawer">
+            <div class="drawer-header">
+                <span class="drawer-title">// THREAT DETAIL</span>
+                <button class="drawer-close" id="drawer-close">✕ CLOSE</button>
+            </div>
+            <div class="drawer-body" id="drawer-body">
+                <!-- populated by JS -->
+            </div>
+        </div>
+
+        <script>
+            // ============================================================
+            // dashboard.js (inline) — Frontend Logic
+            // ============================================================
+            // This script runs in the browser. It:
+            //   1. Calls our Flask API using fetch()
+            //   2. Reads the JSON responses
+            //   3. Dynamically builds and updates the HTML on the page
+            //
+            // No page reloads needed — this is called a "Single Page App"
+            // pattern. The HTML skeleton is in the body above; JS fills it.
+            // ============================================================
+
+            // Base URL for all API calls. Centralizing it here means if
+            // you change the port or deploy to a server, you only update
+            // this one line instead of hunting through the whole file.
+            const API = 'http://localhost:5000/api';
+
+
+            // ── LIVE CLOCK ───────────────────────────────────────────────
+            // Updates the clock in the header every second.
+            function updateClock() {
+                const now = new Date();
+                // toUTCString() returns e.g. "Mon, 21 Apr 2025 14:32:11 GMT"
+                // .slice(17, 25) extracts just "14:32:11"
+                document.getElementById('live-clock').textContent =
+                    now.toUTCString().slice(17, 25) + ' UTC';
+            }
+            // setInterval(fn, ms) calls fn repeatedly every 1000ms (1 second)
+            setInterval(updateClock, 1000);
+            updateClock(); // call once immediately so it shows on load
+
+
+            // ── APP STATE ────────────────────────────────────────────────
+            // allThreats holds the full unfiltered list from the API.
+            // We keep it so filters can re-run without a new API call.
+            let allThreats = [];
+
+            // activeFilter tracks what filter buttons are currently pressed.
+            // severity: 'ALL' means show everything.
+            let activeFilter = { severity: 'ALL', status: null };
+
+
+            // ── LOAD SUMMARY (metric cards) ──────────────────────────────
+            // async/await lets us write asynchronous code that reads like
+            // synchronous code. fetch() is non-blocking — the browser keeps
+            // running while waiting for the server to respond.
+            async function loadSummary() {
+                try {
+                    // fetch() makes an HTTP GET request to the URL.
+                    // await pauses this function until the response arrives.
+                    const res  = await fetch(`${API}/threats/summary`);
+
+                    // .json() parses the response body as JSON.
+                    // This gives us a plain JavaScript object we can read.
+                    const data = await res.json();
+
+                    // Plug the numbers into the metric card elements by ID.
+                    // || 0 means "use 0 if this key doesn't exist in the response"
+                    document.getElementById('m-total').textContent    = data.total_threats;
+                    document.getElementById('m-critical').textContent = data.by_severity.CRITICAL || 0;
+                    document.getElementById('m-high').textContent     = data.by_severity.HIGH     || 0;
+                    document.getElementById('m-active').textContent   = data.by_status.ACTIVE     || 0;
+                    document.getElementById('m-resolved').textContent = data.by_status.RESOLVED   || 0;
+
+                } catch (e) {
+                    // catch() runs if fetch() fails — e.g. Flask isn't running.
+                    console.error('Summary fetch failed:', e);
+                }
+            }
+
+
+            // ── LOAD ALL THREATS (table) ──────────────────────────────────
+            async function loadThreats() {
+                try {
+                    const res  = await fetch(`${API}/threats`);
+                    const data = await res.json();
+
+                    // Save to module-level state so filters can re-use it
+                    allThreats = data.threats;
+
+                    // Pass the full list to renderTable() to build the HTML rows
+                    renderTable(allThreats);
+
+                } catch (e) {
+                    // If Flask is not running, show a helpful error message
+                    // directly in the table instead of just a blank screen.
+                    document.getElementById('threat-tbody').innerHTML =
+                        `<tr><td colspan="7"><div class="loading-state" style="color:var(--red)">
+                          <span>⚠ BACKEND NOT RUNNING — Start Flask with: python app.py</span>
+                        </div></td></tr>`;
+                    document.getElementById('table-count').textContent = 'Connection failed';
+                }
+            }
+
+
+            // ── RENDER TABLE ROWS ─────────────────────────────────────────
+            // Takes an array of threat objects and builds the table HTML.
+            // Called both on initial load and whenever a filter is applied.
+            function renderTable(threats) {
+
+                // Update the "X events" counter above the table
+                document.getElementById('table-count').textContent =
+                    `${threats.length} event${threats.length !== 1 ? 's' : ''}`;
+
+                // If no threats match the current filter, show an empty state
+                if (threats.length === 0) {
+                    document.getElementById('threat-tbody').innerHTML =
+                        `<tr><td colspan="7"><div class="loading-state">NO MATCHING THREATS</div></td></tr>`;
+                    return; // exit early, nothing else to do
+                }
+
+                // .map() transforms each threat object into an HTML string.
+                // Template literals (backticks) let us embed variables with ${}.
+                // data-id stores the threat ID on the row element so we can
+                // look it up when the user clicks the row.
+                const rows = threats.map(t => `
+                    <tr data-id="${t.id}">
+                        <td><span class="ip-text">#${String(t.id).padStart(3,'0')}</span></td>
+                        <td><span class="sev-badge sev-${t.severity}">${t.severity}</span></td>
+                        <td>
+                            <div class="type-text">${t.type}</div>
+                            <div class="cat-text">${t.category}</div>
+                        </td>
+                        <td class="ip-text">${t.source_ip}</td>
+                        <td class="system-text">${t.affected_system}</td>
+                        <td><span class="status-text status-${t.status}">${t.status.replace('_',' ')}</span></td>
+                        <td class="ts-text">${t.timestamp}</td>
+                    </tr>
+                `).join(''); // .join('') combines all row strings into one big string
+
+                // Set the table body HTML all at once (more efficient than
+                // appending rows one by one)
+                document.getElementById('threat-tbody').innerHTML = rows;
+
+                // After inserting the rows, attach click listeners to each one.
+                // We have to do this AFTER innerHTML is set because the elements
+                // didn't exist in the DOM before that line.
+                document.querySelectorAll('tbody tr[data-id]').forEach(row => {
+                    row.addEventListener('click', () => {
+                        // Read the data-id attribute we stored on the row
+                        const id = parseInt(row.dataset.id);
+                        // Find the matching threat object from our saved state
+                        openDrawer(allThreats.find(t => t.id === id));
+                    });
+                });
+            }
+
+
+            // ── FILTER LOGIC ─────────────────────────────────────────────
+            // Re-filters allThreats based on activeFilter and re-renders.
+            // No API call needed — we already have all the data in memory.
+            function applyFilter() {
+                let filtered = allThreats; // start with everything
+
+                // Only apply severity filter if it's not "ALL"
+                if (activeFilter.severity !== 'ALL') {
+                    // .filter() returns a new array containing only matching items
+                    filtered = filtered.filter(t => t.severity === activeFilter.severity);
+                }
+                // Only apply status filter if one is set
+                if (activeFilter.status) {
+                    filtered = filtered.filter(t => t.status === activeFilter.status);
+                }
+
+                renderTable(filtered); // re-draw the table with filtered data
+            }
+
+            // Attach click listeners to all filter buttons
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+
+                    // Remove 'active' class from all buttons first
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    // Add 'active' to the one that was clicked
+                    btn.classList.add('active');
+
+                    // Read the data-filter attribute from the HTML element
+                    const f    = btn.dataset.filter;
+                    const type = btn.dataset.type; // "status" or undefined (severity)
+
+                    // Update activeFilter based on which type of button was clicked
+                    if (type === 'status') {
+                        activeFilter = { severity: 'ALL', status: f };
+                    } else {
+                        activeFilter = { severity: f, status: null };
+                    }
+
+                    applyFilter(); // re-render the table
+                });
+            });
+
+
+            // ── DETAIL DRAWER ────────────────────────────────────────────
+            // Opens a slide-in panel on the right showing full threat details.
+            // threat is the full threat object from allThreats.
+            function openDrawer(threat) {
+                const body = document.getElementById('drawer-body');
+
+                // Build the detail panel HTML from the threat object's fields.
+                // Each detail-row shows one key-value pair.
+                body.innerHTML = `
+                    <div class="detail-row">
+                        <span class="detail-key">Event ID</span>
+                        <span class="detail-val">#${String(threat.id).padStart(3,'0')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Severity</span>
+                        <span class="sev-badge sev-${threat.severity}">${threat.severity}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Type</span>
+                        <span class="detail-val">${threat.type}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Description</span>
+                        <p class="detail-desc">${threat.description}</p>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">MITRE ATT&CK Technique</span>
+                        <span class="mitre-badge">${threat.mitre_technique}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Category</span>
+                        <span class="detail-val">${threat.category}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Status</span>
+                        <span class="status-text status-${threat.status}">${threat.status.replace('_',' ')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Source IP</span>
+                        <span class="detail-val ip-text">${threat.source_ip}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Target IP</span>
+                        <span class="detail-val ip-text">${threat.target_ip}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Affected System</span>
+                        <span class="detail-val system-text">${threat.affected_system}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Event Count</span>
+                        <span class="detail-val">${threat.event_count} occurrences</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-key">Timestamp (UTC)</span>
+                        <span class="detail-val ts-text">${threat.timestamp}</span>
+                    </div>
+                `;
+
+                // Adding the 'open' CSS class triggers the slide-in animation
+                // defined in the CSS above (transform: translateX(0))
+                document.getElementById('drawer').classList.add('open');
+                document.getElementById('drawer-overlay').classList.add('open');
+            }
+
+            // Removes the 'open' class, triggering the slide-out animation
+            function closeDrawer() {
+                document.getElementById('drawer').classList.remove('open');
+                document.getElementById('drawer-overlay').classList.remove('open');
+            }
+
+            // Close when clicking the X button or the dark overlay behind the drawer
+            document.getElementById('drawer-close').addEventListener('click', closeDrawer);
+            document.getElementById('drawer-overlay').addEventListener('click', closeDrawer);
+
+
+            // ── INITIALIZATION ───────────────────────────────────────────
+            // These two calls kick everything off when the page loads.
+            // They run in parallel (both fetches fire at the same time)
+            // because we don't await them here — they manage themselves.
+            loadSummary();  // fills the metric cards
+            loadThreats();  // fills the threat table
+        </script>
+    </body>
+</html>
