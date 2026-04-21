@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Virtual environment
 venv/
 .venv/
@@ -21,3 +22,28 @@ get-pip.py
 
 # VS Code settings
 .vscode/
+=======
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment variables (API keys, secrets)
+.env
+.env.*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# pip installer scripts
+get-pip.py
+
+# VS Code settings
+.vscode/
+>>>>>>> 21656b7947d4e69e1e1988c5c6aed8d55ae7d9dd
